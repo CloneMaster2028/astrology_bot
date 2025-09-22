@@ -1,156 +1,230 @@
 #!/usr/bin/env python3
 """
-Setup script for Astrology Bot
-Helps with initial setup and configuration
+Startup script for Astrology Bot with error prevention
+Handles the weak reference issue and provides better error reporting
 """
 
-import os
 import sys
+import os
 import subprocess
+import signal
+import time
 from pathlib import Path
 
-def print_header():
-    """Print setup header."""
-    print("=" * 60)
-    print("🌟 ASTROLOGY BOT SETUP 🌟")
-    print("=" * 60)
-    print()
 
 def check_python_version():
-    """Check if Python version is compatible."""
+    """Check Python version compatibility."""
     if sys.version_info < (3, 8):
-        print("❌ Error: Python 3.8+ required!")
+        print(f"❌ Error: Python 3.8+ required!")
         print(f"Current version: {sys.version}")
         print("Please upgrade Python and try again.")
         return False
-    
+
     print(f"✅ Python version: {sys.version.split()[0]}")
     return True
 
-def create_directories():
-    """Create necessary directories."""
-    directories = ['db', 'logs']
-    
-    for directory in directories:
-        Path(directory).mkdir(exist_ok=True)
-        print(f"✅ Created directory: {directory}/")
 
-def create_env_file():
-    """Create .env file from template."""
-    if os.path.exists('.env'):
-        print("⚠️  .env file already exists. Skipping creation.")
-        return
-    
-    if not os.path.exists('.env.example'):
-        print("❌ .env.example file not found!")
-        return
-    
-    # Copy example to .env
-    with open('.env.example', 'r') as source:
-        content = source.read()
-    
-    with open('.env', 'w') as target:
-        target.write(content)
-    
-    print("✅ Created .env file from template")
-    print("⚠️  IMPORTANT: Edit .env file with your actual bot token and admin IDs!")
+def check_dependencies():
+    """Check and install dependencies if needed."""
+    required_packages = [
+        'python-telegram-bot',
+        'python-dotenv'
+    ]
 
-def install_dependencies():
-    """Install Python dependencies."""
-    print("📦 Installing dependencies...")
-    
-    try:
-        result = subprocess.run([
-            sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'
-        ], capture_output=True, text=True, check=True)
-        
-        print("✅ Dependencies installed successfully!")
-        return True
-        
-    except subprocess.CalledProcessError as e:
-        print("❌ Error installing dependencies:")
-        print(e.stderr)
-        return False
-    except FileNotFoundError:
-        print("❌ requirements.txt not found!")
-        return False
+    missing_packages = []
 
-def validate_files():
-    """Validate that all required files exist."""
+    for package in required_packages:
+        try:
+            __import__(package.replace('-', '_'))
+        except ImportError:
+            missing_packages.append(package)
+
+    if missing_packages:
+        print(f"❌ Missing packages: {', '.join(missing_packages)}")
+
+        response = input("Install missing packages? (y/N): ").strip().lower()
+        if response in ['y', 'yes']:
+            try:
+                subprocess.check_call([
+                                          sys.executable, '-m', 'pip', 'install', '--upgrade'
+                                      ] + missing_packages)
+                print("✅ Dependencies installed successfully!")
+                return True
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Failed to install dependencies: {e}")
+                return False
+        else:
+            print("Please install missing packages manually:")
+            print(f"pip install {' '.join(missing_packages)}")
+            return False
+
+    print("✅ All dependencies available")
+    return True
+
+
+def check_configuration():
+    """Check configuration files and environment."""
+    # Check for required files
     required_files = [
         'astrology_bot_improved.py',
         'config.py',
         'database.py',
         'astrology_utils.py',
-        'constants.py',
-        'requirements.txt'
+        'constants.py'
     ]
-    
+
     missing_files = []
     for file in required_files:
-        if not os.path.exists(file):
+        if not Path(file).exists():
             missing_files.append(file)
-        else:
-            print(f"✅ Found: {file}")
-    
+
     if missing_files:
         print(f"❌ Missing files: {', '.join(missing_files)}")
         return False
-    
+
+    # Check .env file
+    if not Path('.env').exists():
+        print("❌ .env file not found!")
+        print("Create .env file with your bot token and admin IDs")
+
+        if Path('.env.example').exists():
+            print("Copy .env.example to .env and edit it with your values")
+
+        return False
+
+    # Try to load and validate config
+    try:
+        from config import Config
+        config = Config.from_env()
+        config.validate()
+        print("✅ Configuration valid")
+        return True
+    except Exception as e:
+        print(f"❌ Configuration error: {e}")
+        return False
+
+
+def clear_cache():
+    """Clear Python cache files to prevent import issues."""
+    try:
+        cache_dirs = []
+        for root, dirs, files in os.walk('.'):
+            for dir in dirs:
+                if dir == '__pycache__':
+                    cache_dirs.append(os.path.join(root, dir))
+
+        for cache_dir in cache_dirs:
+            import shutil
+            shutil.rmtree(cache_dir)
+            print(f"🧹 Cleared cache: {cache_dir}")
+
+        # Remove .pyc files
+        pyc_files = []
+        for root, dirs, files in os.walk('.'):
+            for file in files:
+                if file.endswith('.pyc'):
+                    pyc_files.append(os.path.join(root, file))
+
+        for pyc_file in pyc_files:
+            os.remove(pyc_file)
+            print(f"🧹 Removed: {pyc_file}")
+
+        if cache_dirs or pyc_files:
+            print("✅ Python cache cleaned")
+
+    except Exception as e:
+        print(f"⚠️ Cache cleaning failed (non-critical): {e}")
+
+
+def create_directories():
+    """Create necessary directories."""
+    directories = ['db', 'logs']
+
+    for directory in directories:
+        try:
+            Path(directory).mkdir(exist_ok=True)
+            print(f"✅ Directory ready: {directory}/")
+        except Exception as e:
+            print(f"❌ Could not create {directory}: {e}")
+            return False
+
     return True
 
-def print_next_steps():
-    """Print next steps for the user."""
-    print()
-    print("=" * 60)
-    print("🎉 SETUP COMPLETE!")
-    print("=" * 60)
-    print()
-    print("📝 NEXT STEPS:")
-    print("1. Edit .env file with your bot token:")
-    print("   - Get token from @BotFather on Telegram")
-    print("   - Get your user ID from @userinfobot")
-    print()
-    print("2. Run the bot:")
-    print("   python astrology_bot_improved.py")
-    print()
-    print("3. Test the bot by messaging it on Telegram")
-    print()
-    print("🔧 Configuration file: .env")
-    print("📊 Database location: db/astrology_bot.db")
-    print("📁 Log files: logs/astrology_bot.log")
-    print()
-    print("❓ Need help? Check the README.md file!")
-    print()
+
+def run_bot():
+    """Run the bot with proper error handling."""
+    print("\n🚀 Starting Astrology Bot...")
+    print("Press Ctrl+C to stop the bot")
+    print("-" * 50)
+
+    try:
+        # Import and run the bot
+        from astrology_bot_improved import run_bot
+        run_bot()
+
+    except KeyboardInterrupt:
+        print("\n🛑 Bot stopped by user")
+        return True
+
+    except ImportError as e:
+        print(f"\n❌ Import error: {e}")
+        print("Make sure all required files are present and dependencies installed")
+        return False
+
+    except Exception as e:
+        print(f"\n❌ Fatal error: {e}")
+        print("\nTroubleshooting tips:")
+        print("1. Check your .env file configuration")
+        print("2. Verify your bot token is correct")
+        print("3. Ensure admin IDs are set properly")
+        print("4. Check the logs/astrology_bot.log file for details")
+        return False
+
 
 def main():
-    """Main setup function."""
-    print_header()
-    
-    # Check Python version
+    """Main startup function with comprehensive checks."""
+    print("=" * 60)
+    print("🌟 ASTROLOGY BOT STARTUP 🌟")
+    print("=" * 60)
+
+    # Step 1: Check Python version
     if not check_python_version():
-        return 1
-    
-    # Validate required files
-    if not validate_files():
-        print("\n❌ Setup failed: Missing required files")
-        return 1
-    
-    # Create directories
-    create_directories()
-    
-    # Create .env file
-    create_env_file()
-    
-    # Install dependencies
-    if not install_dependencies():
-        print("\n❌ Setup failed: Could not install dependencies")
-        return 1
-    
-    # Show next steps
-    print_next_steps()
-    
-    return 0
+        sys.exit(1)
+
+    # Step 2: Clear cache (helps with weak reference issues)
+    clear_cache()
+
+    # Step 3: Check dependencies
+    if not check_dependencies():
+        sys.exit(1)
+
+    # Step 4: Create directories
+    if not create_directories():
+        sys.exit(1)
+
+    # Step 5: Check configuration
+    if not check_configuration():
+        sys.exit(1)
+
+    # Step 6: Run the bot
+    print("\n✅ All checks passed!")
+    success = run_bot()
+
+    if success:
+        print("\n✅ Bot shutdown completed successfully")
+        sys.exit(0)
+    else:
+        print("\n❌ Bot encountered errors")
+        sys.exit(1)
+
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n🛑 Startup interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n💥 Startup script error: {e}")
+        print("Try running the bot directly with: python astrology_bot_improved.py")
+        sys.exit(1)

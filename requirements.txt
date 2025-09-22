@@ -1,51 +1,51 @@
-# Core Telegram Bot Framework
-python-telegram-bot==20.7
+# Core Telegram Bot Framework - Fixed Version
+python-telegram-bot==21.0.1
 
 # Environment Variable Management
-python-dotenv==1.0.0
+python-dotenv==1.0.1
 
-# Task Scheduling (for future features like daily horoscopes)
+# HTTP Client (used by telegram bot) - ensure compatibility
+httpx>=0.27.0,<1.0.0
+
+# Date and Time Utilities
+python-dateutil==2.9.0
+
+# Task Scheduling (for future features)
 APScheduler==3.10.4
 
-# Additional useful packages for enhanced functionality
-# Uncomment the ones you want to use:
+# Additional Dependencies for Enhanced Functionality
+# These are automatically installed as dependencies but listed for clarity
 
-# Date and time utilities (enhanced date handling)
-# python-dateutil==2.8.2
+# Core Python libraries (usually included)
+typing-extensions>=4.0.0
 
-# HTTP requests (for future API integrations)
-# requests==2.31.0
-
-# Data validation and parsing
-# pydantic==2.5.0
-
-# Timezone handling
-# pytz==2023.3
-
-# JSON handling and data processing
-# ujson==5.8.0
-
-# Performance monitoring (optional)
-# psutil==5.9.6
-
-# Testing dependencies (for development)
-# pytest==7.4.3
+# Development and Testing Dependencies (optional - uncomment if needed)
+# pytest==7.4.4
 # pytest-asyncio==0.21.1
 # pytest-cov==4.1.0
 
-# Development tools (optional)
-# black==23.11.0
-# flake8==6.1.0
-# mypy==1.7.1
+# Code Quality Tools (optional - uncomment if needed)
+# black==23.12.1
+# flake8==7.0.0
+# mypy==1.8.0
 
-# Production deployment (optional)
+# Production Deployment (optional - uncomment if needed)
 # gunicorn==21.2.0
-# uvicorn==0.24.0
+# uvicorn[standard]==0.25.0
 
-# Database utilities (if you want to switch from SQLite)
-# sqlalchemy==2.0.23
-# alembic==1.12.1
+# Database Tools (optional - uncomment if needed)
+# sqlalchemy==2.0.25
+# alembic==1.13.1
 
-# Backup and data export (optional)
-# pandas==2.1.3
+# Data Analysis (optional - uncomment if needed)
+# pandas==2.1.4
 # openpyxl==3.1.2
+
+# Performance Monitoring (optional - uncomment if needed)
+# psutil==5.9.7
+
+# Enhanced Logging (optional - uncomment if needed)
+# colorlog==6.8.0
+
+# Security (optional - uncomment if needed)
+# cryptography==41.0.8
