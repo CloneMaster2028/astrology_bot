@@ -25,8 +25,8 @@ try:
     from constants import (
         Messages, Emoji, MAIN_KEYBOARD,
         SET_DOB_DAY, SET_DOB_MONTH, SET_DOB_YEAR,
-        ADD_FACT_DAY, ADD_FACT_TEXT
-    )
+        ADD_FACT_DAY, ADD_FACT_TEXT, ZODIAC_ELEMENTS
+)
 except ImportError as e:
     print(f"Error importing modules: {e}")
     print("Make sure all required files are in the same directory")
@@ -293,7 +293,7 @@ Available Features:
 • Numerology - Life path number analysis
 • Date Facts - Interesting facts about dates
 • Compatibility - Zodiac compatibility check
-• Random Fact - Surprise insights
+• Zodiac Secret - Surprise insights
 • Support - Help support the bot
 
 Commands you can type:
@@ -302,7 +302,7 @@ Commands you can type:
 /numerology - Your numerology profile
 /fact <number> - Facts for specific day
 /compatibility - Check compatibility
-/randomfact - Get a random fact
+/zodiacsecret - Get a Zodiac Secret
 /help - Show this help
 
 Use the menu buttons below for easy access!
@@ -554,8 +554,8 @@ async def today_reading(update: Update, context: ContextTypes.DEFAULT_TYPE):
         horoscope = bot.astro.get_horoscope(zodiac)
         lucky_number = bot.astro.generate_lucky_number(life_path, date.today())
 
-        # Get random fact
-        fact_result = bot.db.get_random_fact()
+        # Get Zodiac Secret
+        fact_result = bot.db.get_zodiac_secret()
         if fact_result:
             fact, _ = fact_result
         else:
@@ -671,8 +671,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return await numerology_info(update, context)
 
         # Fact patterns
-        elif any(phrase in text_lower for phrase in ["fact", "random fact", "interesting"]):
-            return await random_fact(update, context)
+        elif any(phrase in text_lower for phrase in ["fact", "Zodiac Secret", "interesting"]):
+            return await zodiac_secret(update, context)
 
         # Support patterns
         elif "support" in text_lower or "donate" in text_lower:
@@ -688,7 +688,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             "• Set DOB - Configure your birth date\n"
             "• Today's Reading - Daily horoscope\n"
             "• Numerology - Life path analysis\n"
-            "• Random Fact - Interesting insights\n"
+            "• Zodiac Secret - Interesting insights\n"
             "• Help - Show all commands\n\n"
             "Use the menu buttons below!"
         )
@@ -704,16 +704,16 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # Additional handlers (continuing from previous handlers...)
-async def random_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced random fact handler."""
+async def zodiac_secret(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced Zodiac Secret handler."""
     try:
         if not update.effective_user or not update.message:
             return
 
         user_id = update.effective_user.id
-        logger.info(f"User {user_id} requested random fact")
+        logger.info(f"User {user_id} requested zodiac secret")
 
-        fact_result = bot.db.get_random_fact()
+        fact_result = bot.db.get_zodia_secret()
 
         if fact_result:
             fact_text, fact_type = fact_result
@@ -727,18 +727,18 @@ async def random_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             try:
                 await update.message.reply_text(
-                    f"🎲 **Random Fact** 🎲\n\n{emoji} {fact_text}",
+                    f"🎲 **Zodiac Secret** 🎲\n\n{emoji} {fact_text}",
                     parse_mode='Markdown'
                 )
             except (TelegramError, Exception):
-                await update.message.reply_text(f"🎲 Random Fact\n\n{emoji} {fact_text}")
+                await update.message.reply_text(f"🎲 Zodiac Secret\n\n{emoji} {fact_text}")
         else:
             await update.message.reply_text(
                 "🎲 The universe is full of infinite possibilities and mysteries!"
             )
 
     except Exception as e:
-        logger.error(f"Error in random_fact: {e}")
+        logger.error(f"Error in zodiac_secret: {e}")
         await safe_reply(update, "Here's a fact: You're awesome! ✨")
 
 
@@ -1156,7 +1156,7 @@ async def main():
         # Feature commands
         application.add_handler(CommandHandler('today', today_reading))
         application.add_handler(CommandHandler('numerology', numerology_info))
-        application.add_handler(CommandHandler('randomfact', random_fact))
+        application.add_handler(CommandHandler('zodiacsecret', zodiac_secret))
         application.add_handler(CommandHandler('support', support_command))
         application.add_handler(CommandHandler('compatibility', compatibility_check))
         application.add_handler(CommandHandler('fact', date_facts))

@@ -58,7 +58,7 @@ Use the menu below to get started, or type /help for more info.
 {Emoji.NUMBERS} **Numerology** - Learn about your life path number
 {Emoji.CALENDAR} **Date Facts** - Get facts about specific dates
 {Emoji.LOVE} **Compatibility** - Check zodiac compatibility
-{Emoji.DICE} **Random Fact** - Get a random interesting fact
+{Emoji.DICE} **Zodiac Secret** - Get a random interesting fact
 {Emoji.MONEY} **Support** - Support the bot development
 
 **Direct Commands:**
@@ -67,7 +67,7 @@ Use the menu below to get started, or type /help for more info.
 /numerology - Get your numerology info
 /fact <day> - Get fact for specific day
 /compatibility - Check compatibility
-/randomfact - Random fact
+/zodiacsecret - Zodiac Secret
 
 Set your birth date first for personalized readings! {Emoji.SPARKLES}
     """
@@ -323,7 +323,7 @@ ZODIAC_ELEMENTS = {
 MAIN_KEYBOARD = [
     [f"{Emoji.BIRTHDAY} Set DOB", f"{Emoji.STAR} Today's Reading"],
     [f"{Emoji.NUMBERS} Numerology", f"{Emoji.CALENDAR} Date Facts"],
-    [f"{Emoji.LOVE} Compatibility", f"{Emoji.DICE} Random Fact"],
+    [f"{Emoji.LOVE} Compatibility", f"{Emoji.DICE} Zodiac Secret"],
     [f"{Emoji.MONEY} Support", f"{Emoji.QUESTION} Help"]
 ]
 
