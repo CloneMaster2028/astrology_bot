@@ -1,339 +1,394 @@
 """
-Database management for Astrology Bot
+Database management for Astrology Bot - Enhanced with better error handling
 """
-import os
 import sqlite3
 import logging
-from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Optional, Tuple, List
+from pathlib import Path
 from constants import SAMPLE_FACTS
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    """Handles all database operations for the astrology bot."""
+    """Manages SQLite database operations with improved error handling."""
 
-    def __init__(self, db_path: str = "db/astrology_bot.db"):
+    def __init__(self, db_path: str):
         self.db_path = db_path
-        # Ensure db directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self.init_database()
+        logger.info(f"Initializing database at: {db_path}")
+        self._ensure_db_directory()
+        self._init_database()
 
-    @contextmanager
-    def get_connection(self):
-        """Context manager for database connections."""
+    def _ensure_db_directory(self):
+        """Ensure database directory exists."""
+        try:
+            db_dir = Path(self.db_path).parent
+            db_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Database directory created/verified: {db_dir}")
+        except Exception as e:
+            logger.error(f"Failed to create database directory: {e}")
+            raise
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get database connection with better error handling."""
+        try:
+            conn = sqlite3.connect(self.db_path, timeout=10.0)
+            conn.row_factory = sqlite3.Row
+            # Enable foreign keys and set journal mode
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            return conn
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            raise
+
+    def _init_database(self):
+        """Initialize database tables with improved error handling."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Users table with better constraints
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    dob TEXT NOT NULL,
+                    zodiac_sign TEXT NOT NULL,
+                    life_path_number INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            logger.info("Users table created/verified")
+
+            # Facts table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS facts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    day INTEGER,
+                    month INTEGER,
+                    fact_type TEXT NOT NULL,
+                    fact_text TEXT NOT NULL
+                )
+            ''')
+            logger.info("Facts table created/verified")
+
+            # Check if facts table is empty and populate
+            cursor.execute('SELECT COUNT(*) as count FROM facts')
+            count = cursor.fetchone()['count']
+
+            if count == 0:
+                logger.info("Populating facts table with sample data...")
+                cursor.executemany(
+                    'INSERT INTO facts (day, month, fact_type, fact_text) VALUES (?, ?, ?, ?)',
+                    SAMPLE_FACTS
+                )
+                logger.info(f"Inserted {len(SAMPLE_FACTS)} facts into database")
+
+            conn.commit()
+            conn.close()
+            logger.info("Database initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}", exc_info=True)
+            raise
+
+    def save_user_dob(self, user_id: int, birth_date: date, zodiac: str, life_path: int) -> bool:
+        """Save or update user's date of birth with enhanced error handling."""
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row  # Enable column access by name
-            yield conn
-        except sqlite3.Error as e:
-            if conn:
-                conn.rollback()
-            logger.error(f"Database error: {e}")
-            raise
+            logger.info(f"Attempting to save DOB for user {user_id}")
+            logger.debug(f"Data: date={birth_date}, zodiac={zodiac}, life_path={life_path}")
+
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            dob_str = birth_date.isoformat()
+
+            # Check if user exists
+            cursor.execute('SELECT user_id FROM users WHERE user_id = ?', (user_id,))
+            exists = cursor.fetchone()
+
+            if exists:
+                logger.info(f"Updating existing user {user_id}")
+                cursor.execute('''
+                    UPDATE users 
+                    SET dob = ?, zodiac_sign = ?, life_path_number = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = ?
+                ''', (dob_str, zodiac, life_path, user_id))
+            else:
+                logger.info(f"Inserting new user {user_id}")
+                cursor.execute('''
+                    INSERT INTO users (user_id, dob, zodiac_sign, life_path_number)
+                    VALUES (?, ?, ?, ?)
+                ''', (user_id, dob_str, zodiac, life_path))
+
+            conn.commit()
+
+            # Verify the save
+            cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+            saved_user = cursor.fetchone()
+
+            if saved_user:
+                logger.info(f"Successfully saved DOB for user {user_id}: {zodiac}, Life Path {life_path}")
+                return True
+            else:
+                logger.error(f"Save appeared to succeed but user not found in database")
+                return False
+
+        except sqlite3.IntegrityError as e:
+            logger.error(f"Integrity error saving DOB for user {user_id}: {e}")
+            return False
+        except sqlite3.OperationalError as e:
+            logger.error(f"Database operational error for user {user_id}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error saving DOB for user {user_id}: {e}", exc_info=True)
+            return False
         finally:
             if conn:
-                conn.close()
-
-    def init_database(self):
-        """Initialize SQLite database and create tables if they don't exist."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-
-                # Create users table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS users (
-                        user_id INTEGER PRIMARY KEY,
-                        dob TEXT,
-                        zodiac_sign TEXT,
-                        life_path_number INTEGER,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-
-                # Create facts table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS facts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        day INTEGER,
-                        month INTEGER,
-                        type TEXT DEFAULT 'general',
-                        fact_text TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-
-                # Create subscriptions table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS subscriptions (
-                        user_id INTEGER PRIMARY KEY,
-                        subscribed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-
-                # Create indexes for better performance
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_facts_day ON facts(day)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_facts_type ON facts(type)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at)')
-
-                # Insert sample facts if table is empty
-                cursor.execute('SELECT COUNT(*) FROM facts')
-                if cursor.fetchone()[0] == 0:
-                    cursor.executemany(
-                        'INSERT INTO facts (day, month, type, fact_text) VALUES (?, ?, ?, ?)',
-                        SAMPLE_FACTS
-                    )
-                    logger.info(f"Inserted {len(SAMPLE_FACTS)} sample facts")
-
-                conn.commit()
-                logger.info("Database initialized successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            raise
-
-    def save_user_dob(self, user_id: int, dob: date, zodiac: str, life_path: int) -> bool:
-        """Save user's date of birth and calculated astro data."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO users (user_id, dob, zodiac_sign, life_path_number)
-                    VALUES (?, ?, ?, ?)
-                ''', (user_id, dob.isoformat(), zodiac, life_path))
-                conn.commit()
-                logger.info(f"Saved DOB for user {user_id}: {dob}")
-                return True
-        except Exception as e:
-            logger.error(f"Failed to save user DOB: {e}")
-            return False
+                try:
+                    conn.close()
+                except:
+                    pass
 
     def get_user_data(self, user_id: int) -> Optional[Tuple[str, str, int]]:
-        """Retrieve user's stored data."""
+        """Get user's data (dob, zodiac, life_path) with enhanced error handling."""
+        conn = None
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    'SELECT dob, zodiac_sign, life_path_number FROM users WHERE user_id = ?',
-                    (user_id,)
-                )
-                result = cursor.fetchone()
-                return tuple(result) if result else None
-        except Exception as e:
-            logger.error(f"Failed to get user data: {e}")
-            return None
+            logger.debug(f"Fetching data for user {user_id}")
+            conn = self._get_connection()
+            cursor = conn.cursor()
 
-    def get_fact_by_day(self, day: int) -> Optional[Tuple[str, str]]:
-        """Get a Zodiac Secret for a specific day."""
+            cursor.execute(
+                'SELECT dob, zodiac_sign, life_path_number FROM users WHERE user_id = ?',
+                (user_id,)
+            )
+
+            result = cursor.fetchone()
+
+            if result:
+                logger.debug(f"Found data for user {user_id}")
+                return (result['dob'], result['zodiac_sign'], result['life_path_number'])
+            else:
+                logger.debug(f"No data found for user {user_id}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to get data for user {user_id}: {e}", exc_info=True)
+            return None
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+
+    def get_random_fact(self, day: Optional[int] = None, month: Optional[int] = None) -> Optional[Tuple[str, str]]:
+        """Get a random fact, optionally filtered by day/month."""
+        conn = None
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            if day and month:
                 cursor.execute('''
-                    SELECT fact_text, type
-                    FROM facts
-                    WHERE day = ? OR (day IS NULL AND ? % 7 = id % 7)
-                    ORDER BY RANDOM() LIMIT 1
-                ''', (day, day))
-                result = cursor.fetchone()
-                return (result[0], result[1]) if result else None
-        except Exception as e:
-            logger.error(f"Failed to get fact for day {day}: {e}")
+                    SELECT fact_text, fact_type FROM facts
+                    WHERE (day = ? AND month = ?) OR (day IS NULL AND month IS NULL)
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                ''', (day, month))
+            elif day:
+                cursor.execute('''
+                    SELECT fact_text, fact_type FROM facts
+                    WHERE day = ? OR day IS NULL
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                ''', (day,))
+            else:
+                cursor.execute('''
+                    SELECT fact_text, fact_type FROM facts
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                ''')
+
+            result = cursor.fetchone()
+
+            if result:
+                return (result['fact_text'], result['fact_type'])
             return None
 
-    def get_random_fact(self) -> Optional[Tuple[str, str]]:
-        """Get a Zodiac Secret from the database."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT fact_text, type FROM facts ORDER BY RANDOM() LIMIT 1')
-                result = cursor.fetchone()
-                return (result[0], result[1]) if result else None
         except Exception as e:
-            logger.error(f"Failed to get Zodiac Secret: {e}")
+            logger.error(f"Failed to get random fact: {e}")
             return None
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
 
-    def get_facts_by_type(self, fact_type: str) -> List[Tuple[str, str]]:
-        """Get facts by type (psychology, science, etc.)."""
+    def get_all_users(self) -> List[int]:
+        """Get list of all user IDs."""
+        conn = None
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    'SELECT fact_text, type FROM facts WHERE type = ? ORDER BY RANDOM() LIMIT 2',
-                    (fact_type,)
-                )
-                return [tuple(row) for row in cursor.fetchall()]
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT user_id FROM users')
+            results = cursor.fetchall()
+
+            return [row['user_id'] for row in results]
+
         except Exception as e:
-            logger.error(f"Failed to get facts by type {fact_type}: {e}")
+            logger.error(f"Failed to get all users: {e}")
             return []
-
-    def add_fact(self, day: Optional[int], month: Optional[int], fact_type: str, fact_text: str) -> bool:
-        """Add a new fact to the database."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    'INSERT INTO facts (day, month, type, fact_text) VALUES (?, ?, ?, ?)',
-                    (day, month, fact_type, fact_text)
-                )
-                conn.commit()
-                logger.info(f"Added new fact: {fact_text[:50]}...")
-                return True
-        except Exception as e:
-            logger.error(f"Failed to add fact: {e}")
-            return False
-
-    def get_all_user_ids(self) -> List[int]:
-        """Get all registered user IDs for broadcasting."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT user_id FROM users')
-                return [row[0] for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Failed to get user IDs: {e}")
-            return []
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
 
     def get_user_count(self) -> int:
         """Get total number of users."""
+        conn = None
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT COUNT(*) FROM users')
-                return cursor.fetchone()[0]
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT COUNT(*) as count FROM users')
+            result = cursor.fetchone()
+
+            return result['count'] if result else 0
+
         except Exception as e:
             logger.error(f"Failed to get user count: {e}")
             return 0
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
 
-    def get_fact_count(self) -> int:
-        """Get total number of facts."""
+    def delete_user(self, user_id: int) -> bool:
+        """Delete a user from the database."""
+        conn = None
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT COUNT(*) FROM facts')
-                return cursor.fetchone()[0]
-        except Exception as e:
-            logger.error(f"Failed to get fact count: {e}")
-            return 0
+            conn = self._get_connection()
+            cursor = conn.cursor()
 
-    def subscribe_user(self, user_id: int) -> bool:
-        """Subscribe a user to notifications."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    'INSERT OR IGNORE INTO subscriptions (user_id) VALUES (?)',
-                    (user_id,)
-                )
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to subscribe user {user_id}: {e}")
-            return False
+            cursor.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
+            conn.commit()
 
-    def unsubscribe_user(self, user_id: int) -> bool:
-        """Unsubscribe a user from notifications."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM subscriptions WHERE user_id = ?', (user_id,))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to unsubscribe user {user_id}: {e}")
-            return False
-
-    def is_subscribed(self, user_id: int) -> bool:
-        """Check if user is subscribed to notifications."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT 1 FROM subscriptions WHERE user_id = ?', (user_id,))
-                return cursor.fetchone() is not None
-        except Exception as e:
-            logger.error(f"Failed to check subscription for user {user_id}: {e}")
-            return False
-
-    def get_subscribed_users(self) -> List[int]:
-        """Get all subscribed user IDs."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT user_id FROM subscriptions')
-                return [row[0] for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Failed to get subscribed users: {e}")
-            return []
-
-    def cleanup_old_data(self, days: int = 365) -> bool:
-        """Clean up old data (optional maintenance function)."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                # Clean up old subscription records if needed
-                cursor.execute('''
-                    DELETE FROM subscriptions 
-                    WHERE user_id NOT IN (SELECT user_id FROM users)
-                ''')
-                cleaned_rows = cursor.rowcount
-                conn.commit()
-                logger.info(f"Cleaned up {cleaned_rows} orphaned subscription records")
-                return True
-        except Exception as e:
-            logger.error(f"Failed to cleanup old data: {e}")
-            return False
-
-    def backup_database(self, backup_path: str) -> bool:
-        """Create a backup of the database."""
-        try:
-            import shutil
-            shutil.copy2(self.db_path, backup_path)
-            logger.info(f"Database backed up to {backup_path}")
+            logger.info(f"Deleted user {user_id}")
             return True
+
         except Exception as e:
-            logger.error(f"Failed to backup database: {e}")
+            logger.error(f"Failed to delete user {user_id}: {e}")
             return False
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+
+    def add_fact(self, fact_text: str, fact_type: str, day: Optional[int] = None, month: Optional[int] = None) -> bool:
+        """Add a new fact to the database."""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                'INSERT INTO facts (day, month, fact_type, fact_text) VALUES (?, ?, ?, ?)',
+                (day, month, fact_type, fact_text)
+            )
+
+            conn.commit()
+
+            logger.info(f"Added new {fact_type} fact")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to add fact: {e}")
+            return False
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
 
     def get_database_stats(self) -> dict:
         """Get database statistics."""
+        conn = None
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
+            conn = self._get_connection()
+            cursor = conn.cursor()
 
-                stats = {}
+            stats = {}
 
-                # User count
-                cursor.execute('SELECT COUNT(*) FROM users')
-                stats['users'] = cursor.fetchone()[0]
+            cursor.execute('SELECT COUNT(*) as count FROM users')
+            stats['total_users'] = cursor.fetchone()['count']
 
-                # Fact count
-                cursor.execute('SELECT COUNT(*) FROM facts')
-                stats['facts'] = cursor.fetchone()[0]
+            cursor.execute('SELECT COUNT(*) as count FROM facts')
+            stats['total_facts'] = cursor.fetchone()['count']
 
-                # Subscription count
-                cursor.execute('SELECT COUNT(*) FROM subscriptions')
-                stats['subscriptions'] = cursor.fetchone()[0]
+            cursor.execute('SELECT zodiac_sign, COUNT(*) as count FROM users GROUP BY zodiac_sign')
+            stats['zodiac_distribution'] = {row['zodiac_sign']: row['count'] for row in cursor.fetchall()}
 
-                # Facts by type
-                cursor.execute('SELECT type, COUNT(*) FROM facts GROUP BY type')
-                stats['facts_by_type'] = dict(cursor.fetchall())
+            cursor.execute('SELECT life_path_number, COUNT(*) as count FROM users GROUP BY life_path_number')
+            stats['life_path_distribution'] = {row['life_path_number']: row['count'] for row in cursor.fetchall()}
 
-                # Recent users (last 7 days)
-                cursor.execute('''
-                    SELECT COUNT(*) FROM users 
-                    WHERE created_at >= datetime('now', '-7 days')
-                ''')
-                stats['recent_users'] = cursor.fetchone()[0]
-
-                return stats
+            return stats
 
         except Exception as e:
             logger.error(f"Failed to get database stats: {e}")
             return {}
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
 
-    def __str__(self) -> str:
-        """String representation of the database manager."""
-        return f"DatabaseManager(db_path='{self.db_path}')"
+    def test_connection(self) -> bool:
+        """Test database connection and structure."""
+        conn = None
+        try:
+            logger.info("Testing database connection...")
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Test users table
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                logger.error("Users table does not exist!")
+                return False
+
+            # Test facts table
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='facts'")
+            if not cursor.fetchone():
+                logger.error("Facts table does not exist!")
+                return False
+
+            # Test write permission
+            cursor.execute("SELECT COUNT(*) as count FROM users")
+            user_count = cursor.fetchone()['count']
+            logger.info(f"Database test passed. Current users: {user_count}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Database test failed: {e}", exc_info=True)
+            return False
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
